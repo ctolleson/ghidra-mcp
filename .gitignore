@@ -1,0 +1,32 @@
+# --- Python (MCP Server) ---
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+.pytest_cache/
+
+# --- Java & Gradle (Ghidra Extension) ---
+.gradle/
+build/
+dist/
+out/
+bin/
+
+# --- Ghidra Project Files ---
+*.rep/
+*.gpr
+*.lock
+*.bck
+
+# --- IDEs & Editors ---
+.vscode/
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+
+# --- OS Junk ---
+.DS_Store
+Thumbs.db

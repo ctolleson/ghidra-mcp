@@ -1,0 +1,39 @@
+// build.gradle
+plugins {
+    id 'java'
+    id 'eclipse'
+}
+
+def ghidraInstallDir = "/Users/anthonymonte/Desktop/ghidra_11.3.1_PUBLIC"
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation fileTree(dir: ghidraInstallDir + '/Ghidra/Framework', include: ['**/*.jar'])
+    implementation fileTree(dir: ghidraInstallDir + '/Ghidra/Features', include: ['**/*.jar'])
+}
+
+// FORCE Java 17 compatibility so Ghidra can actually load it
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+task zipExtension(type: Zip) {
+    archiveFileName = "ghidra-mcp.zip"
+    destinationDirectory = file("dist")
+
+    from (projectDir) {
+        include 'extension.properties'
+        include 'Module.manifest'
+        into 'ghidra-mcp'
+    }
+    
+    from (jar) {
+        into 'ghidra-mcp/lib'
+    }
+}
+
+build.dependsOn zipExtension
