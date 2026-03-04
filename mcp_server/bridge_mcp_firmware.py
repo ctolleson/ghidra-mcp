@@ -221,6 +221,136 @@ async def rename_data(address: str, new_name: str) -> str:
     })
 
 
+# ── Extended Firmware Analysis ─────────────────────────────────────────
+
+
+@mcp.tool()
+async def get_interrupt_vector_table(address: str = "", num_entries: int = 48, entry_size: int = 4) -> str:
+    """Parse the interrupt vector table (IVT) at the given address (or image base).
+    First step for ARM Cortex-M firmware: identifies reset handler, ISRs, and
+    initial stack pointer. Flags anomalies like vectors pointing to RAM (hooks)."""
+    params = {"num_entries": str(num_entries), "entry_size": str(entry_size)}
+    if address:
+        params["address"] = address
+    return await safe_get("/get_interrupt_vector_table", params)
+
+
+@mcp.tool()
+async def find_function_prologues(architecture: str = "auto", create_functions: str = "false") -> str:
+    """Scan executable memory for architecture-specific function prologues to discover
+    functions missed by auto-analysis. Critical for stripped binaries and raw firmware
+    blobs. Set create_functions='true' to auto-create function definitions at discoveries."""
+    return await safe_get("/find_function_prologues", {
+        "architecture": architecture, "create_functions": create_functions
+    })
+
+
+@mcp.tool()
+async def identify_mmio_accesses(mmio_start: str = "", mmio_end: str = "", filter_function: str = "") -> str:
+    """Find all instructions that read/write Memory-Mapped I/O (MMIO) regions.
+    Identifies which functions talk to hardware peripherals (UART, SPI, GPIO, DMA).
+    Auto-detects MMIO from volatile memory blocks, or specify a range manually."""
+    params = {}
+    if mmio_start: params["mmio_start"] = mmio_start
+    if mmio_end: params["mmio_end"] = mmio_end
+    if filter_function: params["filter_function"] = filter_function
+    return await safe_get("/identify_mmio_accesses", params)
+
+
+@mcp.tool()
+async def find_register_patterns(target_address: str = "", function_address: str = "") -> str:
+    """Detect read-modify-write (RMW) sequences on hardware registers.
+    The canonical pattern for setting/clearing peripheral register bits.
+    Reveals hardware init routines and peripheral configuration logic."""
+    params = {}
+    if target_address: params["target_address"] = target_address
+    if function_address: params["function_address"] = function_address
+    return await safe_get("/find_register_patterns", params)
+
+
+@mcp.tool()
+async def find_crypto_constants(algorithms: str = "all") -> str:
+    """Scan for known cryptographic constants (AES S-box, SHA-256 init values,
+    CRC32 tables, DES permutations, ChaCha20 sigma, etc.) to identify which
+    crypto algorithms the firmware uses and which functions implement them."""
+    return await safe_get("/find_crypto_constants", {"algorithms": algorithms})
+
+
+@mcp.tool()
+async def find_hardcoded_credentials(entropy_threshold: float = 4.0, include_low_entropy: str = "true") -> str:
+    """Hunt for hardcoded credentials, API keys, and secrets using pattern matching,
+    entropy analysis, and proximity to authentication functions. Covers credential
+    pairs, base64 blobs, hex-encoded keys, PEM markers, and connection strings."""
+    return await safe_get("/find_hardcoded_credentials", {
+        "entropy_threshold": str(entropy_threshold),
+        "include_low_entropy": include_low_entropy
+    })
+
+
+@mcp.tool()
+async def trace_call_path(source: str, sink: str, max_depth: int = 10, max_paths: int = 5) -> str:
+    """Find all call paths from a source function to a sink function.
+    Core taint analysis primitive: 'Can input from uart_read reach strcpy/system?'
+    Performs bounded BFS on the call graph."""
+    return await safe_get("/trace_call_path", {
+        "source": source, "sink": sink,
+        "max_depth": str(max_depth), "max_paths": str(max_paths)
+    })
+
+
+@mcp.tool()
+async def find_dangerous_sinks(categories: str = "all") -> str:
+    """Locate all calls to dangerous functions (strcpy, sprintf, system, gets, etc.)
+    across the entire binary. The standard starting point for vuln research.
+    Categories: buffer_overflow, format_string, command_injection, memory, all."""
+    return await safe_get("/find_dangerous_sinks", {"categories": categories})
+
+
+@mcp.tool()
+async def find_format_string_vulns(include_snprintf: str = "true") -> str:
+    """Find printf-family calls where the format string is NOT a constant literal.
+    These are format string vulnerabilities - the format arg comes from a variable
+    or parameter that could be attacker-controlled."""
+    return await safe_get("/find_format_string_vulns", {"include_snprintf": include_snprintf})
+
+
+@mcp.tool()
+async def detect_rtos() -> str:
+    """Identify the Real-Time Operating System (RTOS) used in the firmware.
+    Detects FreeRTOS, Zephyr, ThreadX, VxWorks, Mbed OS, RIOT, NuttX, Contiki,
+    or bare-metal. Provides analysis hints specific to the detected RTOS."""
+    return await safe_get("/detect_rtos")
+
+
+@mcp.tool()
+async def find_function_pointer_tables(min_entries: int = 3) -> str:
+    """Scan data regions for arrays of consecutive code pointers - dispatch tables,
+    vtables, callback arrays, command handler tables. These define control flow
+    that static analysis misses and are critical for understanding firmware architecture."""
+    return await safe_get("/find_function_pointer_tables", {"min_entries": str(min_entries)})
+
+
+@mcp.tool()
+async def get_string_clusters(max_gap: int = 64, min_cluster_size: int = 3) -> str:
+    """Find groups of spatially close strings in memory. Related strings (command names,
+    error messages, menu items) are stored contiguously in firmware. Clustering reveals
+    logical modules and subsystems in stripped binaries."""
+    return await safe_get("/get_string_clusters", {
+        "max_gap": str(max_gap), "min_cluster_size": str(min_cluster_size)
+    })
+
+
+@mcp.tool()
+async def get_function_hashes(hash_algorithm: str = "opcode_only", filter_text: str = "", offset: int = 0, limit: int = 200) -> str:
+    """Compute structural hashes for functions to enable firmware version diffing.
+    Export hashes from two firmware versions and compare: changed hashes = patched
+    functions, new hashes = new code, missing hashes = removed code.
+    Modes: opcode_only, structural, exact."""
+    params = {"hash_algorithm": hash_algorithm, "offset": str(offset), "limit": str(limit)}
+    if filter_text: params["filter_text"] = filter_text
+    return await safe_get("/get_function_hashes", params)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="FirmwareMCP Bridge")
     parser.add_argument("--ghidra-server", default="http://127.0.0.1:8080",
