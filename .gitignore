@@ -27,6 +27,25 @@ bin/
 .project
 .settings/
 
+# --- Claude Code ---
+.claude/
+CLAUDE.md
+
+# --- OpenViking ---
+.claude-plugin/
+.openviking/
+ov.conf
+hooks/
+skills/
+scripts/
+data/
+
+# --- Salesforce ---
+.sfdx/
+
+# --- MCP Config ---
+.mcp.json
+
 # --- OS Junk ---
 .DS_Store
 Thumbs.db
