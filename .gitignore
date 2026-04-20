@@ -46,6 +46,11 @@ data/
 # --- MCP Config ---
 .mcp.json
 
+# --- fcc-id-mcp runtime data ---
+fcc-id-mcp/cache/
+fcc-id-mcp/downloads/
+fcc-id-mcp/venv/
+
 # --- OS Junk ---
 .DS_Store
 Thumbs.db
