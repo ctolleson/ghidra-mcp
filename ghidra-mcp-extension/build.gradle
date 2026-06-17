@@ -21,8 +21,16 @@ java {
     targetCompatibility = JavaVersion.VERSION_17
 }
 
+// Derive the target Ghidra version from extension.properties so the build artifact
+// name matches the documented convention: dist/ghidra-mcp-<ghidra_version>.zip.
+// (Compatibility itself is governed by extension.properties inside the ZIP, not the
+// filename — keeping the two in sync avoids the prebuilt-vs-built naming mismatch.)
+def extProps = new Properties()
+file("extension.properties").withInputStream { extProps.load(it) }
+def ghidraVersion = extProps.getProperty("ghidra_version", "unknown")
+
 task zipExtension(type: Zip) {
-    archiveFileName = "ghidra-mcp.zip"
+    archiveFileName = "ghidra-mcp-${ghidraVersion}.zip"
     destinationDirectory = file("dist")
 
     from (projectDir) {

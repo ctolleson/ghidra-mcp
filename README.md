@@ -90,12 +90,16 @@ An MCP (Model Context Protocol) server that connects AI assistants to Ghidra for
 
 ## Step 1: Build the Ghidra Extension
 
-> **Prebuilt extensions are already included** in `ghidra-mcp-extension/dist/`:
-> - `dist/ghidra-mcp.zip` — Ghidra **11.3.1**
-> - `dist/ghidra-mcp-12.0.1.zip` — Ghidra **12.0.1** (already compiled and verified against 12.0.1)
+> **Prebuilt extension (committed):** `ghidra-mcp-extension/dist/ghidra-mcp-12.0.1.zip` — for
+> Ghidra **12.0.1**, already compiled and verified. If you are on 12.0.1, **skip to Step 2: Install**.
 >
-> If you are using either of these Ghidra versions, **skip to Step 2: Install**. Build from
-> source only when targeting a different Ghidra version.
+> For **Ghidra 11.3.1** (or any other version), build from source below. Note that `dist/` is
+> git-ignored, so build outputs are not committed — only the 12.0.1 prebuilt is tracked in the repo.
+
+**Naming convention:** both the committed prebuilt and the build output use a version-specific name,
+`ghidra-mcp-<ghidra_version>.zip`. The build derives that name from `ghidra_version` in
+`extension.properties`, so the filename always reflects the version the ZIP is actually tagged for.
+ZIP-level compatibility is governed by `extension.properties` inside the archive, not the filename.
 
 1. Clone this repository.
 2. Point the build at your local Ghidra install — either edit the `ghidraInstallDir` default in
@@ -104,17 +108,19 @@ An MCP (Model Context Protocol) server that connects AI assistants to Ghidra for
    // build.gradle default:
    def ghidraInstallDir = "/Applications/ghidra_11.3.1_PUBLIC"
    ```
-3. Build the project:
+3. **Set the target version** in `ghidra-mcp-extension/extension.properties` (default in the repo is
+   `11.3.1`). Set **both** `version` and `ghidra_version` to your Ghidra version (e.g. `12.0.1`) —
+   Ghidra checks `ghidra_version` to accept the extension, and the build uses it to name the artifact.
+4. Build the project:
    ```bash
    cd ghidra-mcp-extension
-   # use the default in build.gradle:
+   # build for the default (11.3.1) -> dist/ghidra-mcp-11.3.1.zip
    gradle build
-   # or override per-build for another version (e.g. 12.0.1):
-   gradle build -PghidraInstallDir=/Applications/ghidra_12.0.1_PUBLIC
+   # or build for another version, e.g. 12.0.1 (after editing extension.properties as in step 3):
+   gradle build -PghidraInstallDir=/Applications/ghidra_12.0.1_PUBLIC   # -> dist/ghidra-mcp-12.0.1.zip
    ```
-4. If successful, a ZIP is created in `dist/` (e.g. `dist/ghidra-mcp.zip`). When building for a new
-   Ghidra version, set `version` and `ghidra_version` in `extension.properties` to that version so
-   Ghidra accepts the extension.
+5. The build writes **`dist/ghidra-mcp-<ghidra_version>.zip`** — the filename is derived from
+   `extension.properties`, matching the version-specific naming used by the committed prebuilt.
 
 ---
 
@@ -123,7 +129,7 @@ An MCP (Model Context Protocol) server that connects AI assistants to Ghidra for
 1. Open Ghidra.
 2. From the Project Manager window, go to **File** -> **Install Extensions**.
 3. Click the green **Plus (+)** icon.
-4. Navigate to `dist/` and select the ZIP for your Ghidra version: `ghidra-mcp.zip` (11.3.1) or `ghidra-mcp-12.0.1.zip` (12.0.1).
+4. Navigate to `dist/` and select the version-matched ZIP, `ghidra-mcp-<version>.zip` — e.g. the committed `ghidra-mcp-12.0.1.zip` for Ghidra 12.0.1, or your own `ghidra-mcp-11.3.1.zip` from a build. (Ghidra reads `extension.properties` inside the ZIP to verify compatibility.)
 5. Click **OK**. Ensure the checkbox next to `ghidra-mcp` is checked.
 6. **Restart Ghidra.**
 
