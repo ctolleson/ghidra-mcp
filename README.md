@@ -72,8 +72,11 @@ An MCP (Model Context Protocol) server that connects AI assistants to Ghidra for
 
 ## Prerequisites
 
-1. **Ghidra 11.3.1** (strict requirement)
+1. **Ghidra 11.3.1 or 12.0.1**
    - Download from the [official release page](https://github.com/NationalSecurityAgency/ghidra/releases).
+   - **A pre-compiled extension for Ghidra 12.0.1 is already included** in
+     `ghidra-mcp-extension/dist/ghidra-mcp-12.0.1.zip`. If you are on 12.0.1 you can **skip
+     Step 1 (Build)** entirely and go straight to Step 2 (Install).
 
 2. **Java 17 or 21** (JDK) — required to build the extension.
 
@@ -87,21 +90,31 @@ An MCP (Model Context Protocol) server that connects AI assistants to Ghidra for
 
 ## Step 1: Build the Ghidra Extension
 
+> **Prebuilt extensions are already included** in `ghidra-mcp-extension/dist/`:
+> - `dist/ghidra-mcp.zip` — Ghidra **11.3.1**
+> - `dist/ghidra-mcp-12.0.1.zip` — Ghidra **12.0.1** (already compiled and verified against 12.0.1)
+>
+> If you are using either of these Ghidra versions, **skip to Step 2: Install**. Build from
+> source only when targeting a different Ghidra version.
+
 1. Clone this repository.
-2. Open `ghidra-mcp-extension/build.gradle` in a text editor.
-3. **CRITICAL:** Update the `ghidraInstallDir` variable to point to your local Ghidra installation.
+2. Point the build at your local Ghidra install — either edit the `ghidraInstallDir` default in
+   `ghidra-mcp-extension/build.gradle`, or pass it on the command line (no file edit needed):
    ```groovy
-   // Example (Mac):
-   def ghidraInstallDir = "/Users/username/Desktop/ghidra_11.3.1_PUBLIC"
-   // Example (Windows):
-   // def ghidraInstallDir = "C:\\Tools\\ghidra_11.3.1_PUBLIC"
+   // build.gradle default:
+   def ghidraInstallDir = "/Applications/ghidra_11.3.1_PUBLIC"
    ```
-4. Build the project:
+3. Build the project:
    ```bash
    cd ghidra-mcp-extension
+   # use the default in build.gradle:
    gradle build
+   # or override per-build for another version (e.g. 12.0.1):
+   gradle build -PghidraInstallDir=/Applications/ghidra_12.0.1_PUBLIC
    ```
-5. If successful, a ZIP file will be created in `dist/ghidra-mcp.zip`.
+4. If successful, a ZIP is created in `dist/` (e.g. `dist/ghidra-mcp.zip`). When building for a new
+   Ghidra version, set `version` and `ghidra_version` in `extension.properties` to that version so
+   Ghidra accepts the extension.
 
 ---
 
@@ -110,7 +123,7 @@ An MCP (Model Context Protocol) server that connects AI assistants to Ghidra for
 1. Open Ghidra.
 2. From the Project Manager window, go to **File** -> **Install Extensions**.
 3. Click the green **Plus (+)** icon.
-4. Navigate to `dist/` and select `ghidra-mcp.zip`.
+4. Navigate to `dist/` and select the ZIP for your Ghidra version: `ghidra-mcp.zip` (11.3.1) or `ghidra-mcp-12.0.1.zip` (12.0.1).
 5. Click **OK**. Ensure the checkbox next to `ghidra-mcp` is checked.
 6. **Restart Ghidra.**
 

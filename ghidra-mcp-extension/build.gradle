@@ -4,7 +4,7 @@ plugins {
     id 'eclipse'
 }
 
-def ghidraInstallDir = "/Users/anthonymonte/Desktop/ghidra_11.3.1_PUBLIC"
+def ghidraInstallDir = project.hasProperty('ghidraInstallDir') ? project.ghidraInstallDir : "/Applications/ghidra_11.3.1_PUBLIC"
 
 repositories {
     mavenCentral()
