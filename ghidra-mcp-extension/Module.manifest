@@ -1,2 +1,3 @@
-GHIDRA_MODULE_NAME=GhidraMCP
-GHIDRA_MODULE_DESC=Exposes Ghidra via HTTP for MCP
+# Ghidra module manifest. Recognized keys are colon-delimited
+# (MODULE NAME:, MODULE DEPENDENCY:, MODULE FILE LICENSE:, ...).
+# This extension declares none; gson is provided by Ghidra itself.

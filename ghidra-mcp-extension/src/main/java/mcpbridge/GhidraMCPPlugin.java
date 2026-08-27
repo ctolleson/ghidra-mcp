@@ -922,7 +922,7 @@ public class GhidraMCPPlugin extends ProgramPlugin {
 
                 int txId = p.startTransaction("Add comment");
                 try {
-                    p.getListing().setComment(addr, CodeUnit.PLATE_COMMENT, comment);
+                    p.getListing().setComment(addr, CommentType.PLATE, comment);
                     p.endTransaction(txId, true);
                 } catch (Exception e) {
                     p.endTransaction(txId, false);

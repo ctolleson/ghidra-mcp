@@ -1,10 +1,28 @@
-// build.gradle
+// build.gradle — Ghidra MCP extension
+//
+// Requires Ghidra 12.0.1 and JDK 21+.
+//
+// Point the build at your Ghidra installation either by exporting
+// GHIDRA_INSTALL_DIR, or by passing -PghidraInstallDir=/path/to/ghidra:
+//
+//   export GHIDRA_INSTALL_DIR=/opt/ghidra_12.0.1_PUBLIC
+//   gradle build
+//
 plugins {
     id 'java'
     id 'eclipse'
 }
 
-def ghidraInstallDir = "/Users/anthonymonte/Desktop/ghidra_11.3.1_PUBLIC"
+def ghidraInstallDir = findProperty('ghidraInstallDir') ?: System.getenv('GHIDRA_INSTALL_DIR')
+
+if (!ghidraInstallDir) {
+    throw new GradleException(
+        "Ghidra installation not found.\n" +
+        "Set GHIDRA_INSTALL_DIR or pass -PghidraInstallDir=/path/to/ghidra_12.0.1_PUBLIC")
+}
+if (!file("${ghidraInstallDir}/Ghidra/application.properties").exists()) {
+    throw new GradleException("Not a Ghidra installation: ${ghidraInstallDir}")
+}
 
 repositories {
     mavenCentral()
@@ -15,10 +33,14 @@ dependencies {
     implementation fileTree(dir: ghidraInstallDir + '/Ghidra/Features', include: ['**/*.jar'])
 }
 
-// FORCE Java 17 compatibility so Ghidra can actually load it
+// Ghidra 12.x requires JDK 21 (application.java.min=21).
 java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+jar {
+    archiveBaseName = 'ghidra-mcp'
 }
 
 task zipExtension(type: Zip) {
@@ -30,7 +52,7 @@ task zipExtension(type: Zip) {
         include 'Module.manifest'
         into 'ghidra-mcp'
     }
-    
+
     from (jar) {
         into 'ghidra-mcp/lib'
     }

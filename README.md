@@ -72,12 +72,19 @@ An MCP (Model Context Protocol) server that connects AI assistants to Ghidra for
 
 ## Prerequisites
 
-1. **Ghidra 11.3.1** (strict requirement)
-   - Download from the [official release page](https://github.com/NationalSecurityAgency/ghidra/releases).
+1. **Ghidra 12.0.1** (strict requirement)
+   - Download from the [official release page](https://github.com/NationalSecurityAgency/ghidra/releases/tag/Ghidra_12.0.1_build).
+   - The extension is version-stamped `12.0.1`. Installing it into a different
+     Ghidra release triggers an "Extension Version Mismatch" dialog (Ghidra
+     compares `extension.properties` against its own version string). You can
+     click through it, but the supported target is 12.0.1.
 
-2. **Java 17 or 21** (JDK) — required to build the extension.
+2. **JDK 21 or newer** — required to build the extension.
+   - Ghidra 12.x sets `application.java.min=21`; JDK 17 is no longer sufficient.
+   - Verify with `java -version` before building.
 
-3. **Gradle** — install via `brew install gradle` (Mac) or your package manager.
+3. **Gradle 8.5+** — `winget install Gradle.Gradle` (Windows), `brew install gradle` (Mac),
+   or your package manager.
 
 4. **Python 3.10+**
 
@@ -88,20 +95,27 @@ An MCP (Model Context Protocol) server that connects AI assistants to Ghidra for
 ## Step 1: Build the Ghidra Extension
 
 1. Clone this repository.
-2. Open `ghidra-mcp-extension/build.gradle` in a text editor.
-3. **CRITICAL:** Update the `ghidraInstallDir` variable to point to your local Ghidra installation.
-   ```groovy
-   // Example (Mac):
-   def ghidraInstallDir = "/Users/username/Desktop/ghidra_11.3.1_PUBLIC"
-   // Example (Windows):
-   // def ghidraInstallDir = "C:\\Tools\\ghidra_11.3.1_PUBLIC"
+2. Tell the build where Ghidra lives. Either export `GHIDRA_INSTALL_DIR`:
+   ```bash
+   # Mac / Linux
+   export GHIDRA_INSTALL_DIR=/opt/ghidra_12.0.1_PUBLIC
    ```
-4. Build the project:
+   ```powershell
+   # Windows (PowerShell)
+   $env:GHIDRA_INSTALL_DIR = "C:\Tools\ghidra_12.0.1_PUBLIC"
+   ```
+   ...or pass it on the command line in step 3 with
+   `-PghidraInstallDir=/path/to/ghidra_12.0.1_PUBLIC`.
+
+   The build fails fast with a clear message if the path is unset or does not
+   look like a Ghidra installation.
+
+3. Build the project:
    ```bash
    cd ghidra-mcp-extension
    gradle build
    ```
-5. If successful, a ZIP file will be created in `dist/ghidra-mcp.zip`.
+4. If successful, a ZIP file will be created at `dist/ghidra-mcp.zip`.
 
 ---
 
@@ -122,6 +136,9 @@ Only necessary if Ghidra didn't prompt you to automatically configure the new pl
 2. Go to **File** -> **Configure...**.
 3. Click the **Plug Icon** (top right) or "Add Plugin".
 4. Search for `GhidraMCPPlugin` and check the box.
+   - It is listed under the **Miscellaneous** package, not under a
+     "FirmwareMCP" heading — Ghidra falls back to Miscellaneous for plugins
+     that do not register their own `PluginPackage`.
 5. You should see in the console:
    > `[INFO] MCP HTTP Server started on port 8080`
 
@@ -134,7 +151,7 @@ Only necessary if Ghidra didn't prompt you to automatically configure the new pl
    ```bash
    python -m venv venv
    source venv/bin/activate
-   pip install mcp httpx
+   pip install -r requirements.txt
    ```
 3. Run the firmware bridge server:
    ```bash
@@ -143,6 +160,9 @@ Only necessary if Ghidra didn't prompt you to automatically configure the new pl
    Options:
    - `--ghidra-server http://host:port` — connect to a remote Ghidra instance
    - `--transport sse --mcp-port 8081` — run in SSE mode instead of stdio
+
+The Python bridge talks plain HTTP to the plugin on port 8080 and is
+independent of the Ghidra version.
 
 ---
 
@@ -157,3 +177,25 @@ Use the **MCP Inspector** to verify the pipeline without needing an LLM key.
    ```
 3. A web interface opens (usually `http://localhost:5173`).
 4. Find any tool in the list (e.g., `get_binary_info`) and click **Run Tool**.
+
+---
+
+## Ghidra Version Compatibility
+
+| Ghidra | Status |
+|--------|--------|
+| 12.0.1 | **Supported.** Builds and loads clean; verified end to end against a real install. |
+| 12.0.2 – 12.0.4, 12.1.x | Expected to work — same JDK 21 floor, and every API this plugin calls is unchanged (12.0.3 was also verified end to end). Re-stamp `version=` in `extension.properties` to match your build, or click through the mismatch dialog. |
+| 11.4.x | Source-compatible (`CommentType` exists, same JDK 21 floor), but the extension is stamped 12.0.1. Untested. |
+| 11.3.x and earlier | **Not supported.** `add_comment` uses `CommentType`, which was introduced in Ghidra 11.4. |
+
+### Notes on the 12.0.x migration
+
+- `add_comment` now calls `Listing.setComment(Address, CommentType, String)`.
+  The old `CodeUnit.PLATE_COMMENT` int constants are deprecated for removal
+  (`since = "11.4"`) and will disappear in a future release.
+- `build.gradle` targets Java 21 and reads the Ghidra path from
+  `GHIDRA_INSTALL_DIR` instead of a hardcoded directory.
+- `Module.manifest` uses Ghidra's colon-delimited key syntax. The previous
+  `GHIDRA_MODULE_NAME=` / `GHIDRA_MODULE_DESC=` lines were not valid manifest
+  keys and logged a parse error on every Ghidra startup.
