@@ -12,6 +12,7 @@ Pairs with the Ghidra MCP server in the parent repo — query this first to lear
 |------|-------------|
 | `lookup_fcc_id` | Return grantee name, product description, approval dates, frequency bands, and available filing documents. Accepts hyphenated or compact FCC ID formats. Results cached for 7 days. |
 | `extract_device_specs` | Scan filing metadata for known MCU identifiers (ESP8266/ESP32, nRF52, STM32, CC2640, RTL8710, BCM43438) and return Ghidra-ready architecture and base address. |
+| `download_fcc_document` | Download one filing exhibit (PDF) to `downloads/<FCC_ID>/`. Selects by document name, category, or exact URL; call with no `document` to list what is downloadable. Optionally copies the file to a `dest_dir` of your choosing. |
 
 ### Scope
 
@@ -19,7 +20,8 @@ Pairs with the Ghidra MCP server in the parent repo — query this first to lear
 - `lookup_fcc_id` reports both **available** documents (with PDF URLs) and **confidential_no_public_copy** entries — useful context when the chip is named in a withheld block diagram.
 - `extract_device_specs` progressively downloads PDFs (block diagram → operational description → internal photos → test report), tries pymupdf text extraction first, and falls back to **tesseract OCR** at 4 rotations with preprocessing when embedded text is thin.
 - Downloads and OCR output are cached under `downloads/<FCC_ID>/` so repeat calls are fast.
-- `download_fcc_document`, `search_fcc_by_grantee`, and `identify_device_from_description` are not yet implemented.
+- `download_fcc_document` only fetches documents listed in the filing — it will not take an arbitrary URL. An ambiguous selector (e.g. `test report` when the filing has two) comes back with the candidates instead of a guess. Downloads are validated to actually be PDFs; both hosts answer a bad document path with a 200 + HTML error page.
+- `search_fcc_by_grantee` and `identify_device_from_description` are not yet implemented.
 
 ### OCR prerequisites
 

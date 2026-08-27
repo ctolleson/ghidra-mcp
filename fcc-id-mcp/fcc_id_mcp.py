@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import json
 import re
+import shutil
 import sqlite3
 import sys
 import time
@@ -25,7 +26,7 @@ from bs4 import BeautifulSoup
 from mcp.server.fastmcp import FastMCP
 
 from chip_db import CHIP_DB, match_chips_in_text
-from pdf_ocr import extract_pdf_text
+from pdf_ocr import cache_paths, extract_pdf_text, fetch_pdf, pdf_page_count
 
 # ── Configuration ──────────────────────────────────────────────────────
 
@@ -135,19 +136,24 @@ def _cache_put(fcc_id: str, result: dict[str, Any], source: str) -> None:
 # ── HTTP with Rate Limiting ───────────────────────────────────────────
 
 
-async def _rate_limited_get(client: httpx.AsyncClient, url: str) -> httpx.Response:
+async def _rate_limit_gate() -> None:
+    """Block until the shared inter-request interval has elapsed."""
     global _last_request_time
     async with _rate_lock:
         elapsed = time.monotonic() - _last_request_time
         if elapsed < RATE_LIMIT_SECONDS:
             await asyncio.sleep(RATE_LIMIT_SECONDS - elapsed)
         _last_request_time = time.monotonic()
+
+
+async def _rate_limited_get(client: httpx.AsyncClient, url: str) -> httpx.Response:
+    await _rate_limit_gate()
     return await client.get(url, follow_redirects=True)
 
 
-def _new_client() -> httpx.AsyncClient:
+def _new_client(accept: str = "text/html,application/xhtml+xml") -> httpx.AsyncClient:
     return httpx.AsyncClient(
-        headers={"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml"},
+        headers={"User-Agent": USER_AGENT, "Accept": accept},
         timeout=HTTP_TIMEOUT,
         max_redirects=MAX_REDIRECTS,
     )
@@ -759,6 +765,210 @@ async def extract_device_specs(fcc_id: str, enable_ocr: bool = True) -> str:
             "source_url": payload.get("source_url", ""),
         },
     }, indent=2)
+
+
+def _doc_label(doc: dict[str, Any]) -> str:
+    """Human-facing name for a document row."""
+    return _clean_text(doc.get("type") or doc.get("category") or doc.get("url", ""))
+
+
+def _doc_haystack(doc: dict[str, Any]) -> str:
+    return " ".join(filter(None, (
+        str(doc.get("type", "")),
+        str(doc.get("category", "")),
+        str(doc.get("url", "")).rsplit("/", 1)[-1].replace("-", " ").replace("_", " "),
+    ))).lower()
+
+
+def _find_document(
+    documents: list[dict[str, Any]], query: str
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    """Resolve ``query`` to one document.
+
+    Returns ``(match, candidates)``. ``match`` is set only when the query
+    resolves unambiguously; otherwise ``candidates`` holds every partial hit so
+    the caller can report the choice back to the model. Selectors are tried
+    strongest-first: exact URL, exact name/category, then substring — a stronger
+    tier wins outright rather than being merged with weaker hits.
+    """
+    q = _clean_text(query).lower()
+    if not q:
+        return None, []
+
+    for doc in documents:
+        if str(doc.get("url", "")).lower() == q:
+            return doc, []
+
+    # Callers often pass the snake_case stage keys used by extract_device_specs.
+    q_relaxed = q.replace("_", " ").replace("-", " ")
+
+    exact = [
+        d for d in documents
+        if _clean_text(d.get("type", "")).lower() in (q, q_relaxed)
+        or _clean_text(d.get("category", "")).lower() in (q, q_relaxed)
+    ]
+    if len(exact) == 1:
+        return exact[0], []
+    if exact:
+        return None, exact
+
+    partial = [d for d in documents if q_relaxed in _doc_haystack(d)]
+    if len(partial) == 1:
+        return partial[0], []
+    return None, partial
+
+
+def _doc_summary(documents: list[dict[str, Any]]) -> list[dict[str, str]]:
+    return [
+        {
+            "name": _doc_label(d),
+            "category": _clean_text(d.get("category", "")),
+            "url": d.get("url", ""),
+        }
+        for d in documents
+    ]
+
+
+@mcp.tool()
+async def download_fcc_document(
+    fcc_id: str,
+    document: str = "",
+    dest_dir: str = "",
+    max_mb: int = 25,
+    overwrite: bool = False,
+) -> str:
+    """Download one filing exhibit (PDF) for an FCC ID to local disk.
+
+    ``document`` picks the exhibit by name, category, or exact URL as reported
+    by ``lookup_fcc_id`` — matching is case-insensitive and accepts substrings,
+    so 'block diagram', 'Internal Photos', or 'schematic' all work. Call with
+    ``document`` empty to list what is downloadable without fetching anything;
+    an ambiguous selector comes back with the candidates rather than a guess.
+
+    Only documents listed in the filing can be fetched. PDFs are cached under
+    ``downloads/<FCC_ID>/`` and reused on repeat calls; set ``overwrite`` to
+    re-download. Pass ``dest_dir`` to also copy the file somewhere with a
+    readable ``<FCC_ID>_<Document Name>.pdf`` name."""
+    try:
+        norm = normalize_fcc_id(fcc_id)
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)})
+
+    normalized = norm["normalized"]
+    payload = await _do_lookup(norm)
+    if not payload.get("found"):
+        return json.dumps({
+            "fcc_id": normalized,
+            "found": False,
+            "downloaded": False,
+            "errors": payload.get("errors", []),
+        }, indent=2)
+
+    documents = payload.get("documents", [])
+    downloadable = [d for d in documents if d.get("url")]
+    withheld = [_doc_label(d) for d in documents if not d.get("url")]
+
+    if not document:
+        return json.dumps({
+            "fcc_id": normalized,
+            "found": True,
+            "downloaded": False,
+            "note": "Call again with `document` set to a name, category, or URL "
+                    "from available_documents.",
+            "available_documents": _doc_summary(downloadable),
+            "confidential_documents": withheld,
+            "source_url": payload.get("source_url", ""),
+        }, indent=2)
+
+    if not downloadable:
+        return json.dumps({
+            "fcc_id": normalized,
+            "found": True,
+            "downloaded": False,
+            "error": "this filing lists no publicly downloadable documents",
+            "confidential_documents": withheld,
+            "source_url": payload.get("source_url", ""),
+        }, indent=2)
+
+    matched, candidates = _find_document(downloadable, document)
+    if matched is None:
+        ambiguous = bool(candidates)
+        return json.dumps({
+            "fcc_id": normalized,
+            "found": True,
+            "downloaded": False,
+            "error": (f"'{document}' matches {len(candidates)} documents — "
+                      "narrow it or pass an exact URL")
+                     if ambiguous else
+                     f"no document matching '{document}' in this filing",
+            "candidates": _doc_summary(candidates if ambiguous else downloadable),
+            "confidential_documents": withheld,
+        }, indent=2)
+
+    pdf_path, _ = cache_paths(normalized, matched["url"], DOWNLOADS_DIR)
+    if overwrite and pdf_path.exists():
+        try:
+            pdf_path.unlink()
+        except OSError as exc:
+            return json.dumps({
+                "fcc_id": normalized,
+                "downloaded": False,
+                "error": f"could not remove cached copy {pdf_path}: {exc}",
+            }, indent=2)
+
+    max_bytes = max(1, int(max_mb)) * 1024 * 1024
+    async with _new_client(accept="application/pdf,*/*") as client:
+        await _rate_limit_gate()
+        try:
+            info = await fetch_pdf(client, matched["url"], pdf_path, max_bytes=max_bytes)
+        except httpx.HTTPError as exc:
+            return json.dumps({
+                "fcc_id": normalized,
+                "document": _doc_label(matched),
+                "downloaded": False,
+                "error": f"download failed: {exc}",
+                "document_url": matched["url"],
+            }, indent=2)
+        except (ValueError, OSError) as exc:
+            return json.dumps({
+                "fcc_id": normalized,
+                "document": _doc_label(matched),
+                "downloaded": False,
+                "error": str(exc),
+                "document_url": matched["url"],
+            }, indent=2)
+
+    result: dict[str, Any] = {
+        "fcc_id": normalized,
+        "document": _doc_label(matched),
+        "category": _clean_text(matched.get("category", "")),
+        "downloaded": True,
+        "path": info["path"],
+        "size_bytes": info["size_bytes"],
+        "from_cache": info["from_cache"],
+        "pdf_url": info["url"],
+        "document_url": matched["url"],
+        "page_count": pdf_page_count(Path(info["path"])),
+    }
+
+    if dest_dir:
+        try:
+            dest = Path(dest_dir).expanduser()
+            dest.mkdir(parents=True, exist_ok=True)
+            slug = re.sub(r"[^A-Za-z0-9._-]+", "_",
+                          _doc_label(matched)).strip("_")[:80] or "document"
+            target = dest / f"{normalized}_{slug}.pdf"
+            if target.exists() and not overwrite:
+                stem, n = target.stem, 2
+                while target.exists():
+                    target = dest / f"{stem}_{n}.pdf"
+                    n += 1
+            shutil.copy2(info["path"], target)
+            result["copied_to"] = str(target)
+        except OSError as exc:
+            result["copy_error"] = f"could not copy into {dest_dir}: {exc}"
+
+    return json.dumps(result, indent=2)
 
 
 # ── Entry point ───────────────────────────────────────────────────────
