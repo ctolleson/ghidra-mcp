@@ -180,6 +180,84 @@ Use the **MCP Inspector** to verify the pipeline without needing an LLM key.
 
 ---
 
+## Step 5: Connect It to Your MCP Client
+
+The bridge speaks MCP over **stdio** by default, so any MCP client launches it
+directly. Point your client at the Python interpreter from the venv you created
+in Step 3 and the bridge script. Use **absolute paths** — clients do not inherit
+your shell's working directory or `PATH`.
+
+Find your interpreter path after activating the venv:
+
+```bash
+# Mac / Linux
+cd mcp_server && source venv/bin/activate && which python
+# Windows (PowerShell): (Resolve-Path venv\Scripts\python.exe).Path
+```
+
+### Claude Code (CLI)
+
+```bash
+claude mcp add firmware-mcp -- /abs/path/to/mcp_server/venv/bin/python \
+  /abs/path/to/mcp_server/bridge_mcp_firmware.py
+```
+
+Or add a project-scoped `.mcp.json` in your own working repo (note: this repo
+git-ignores `.mcp.json`, so create your own):
+
+```json
+{
+  "mcpServers": {
+    "firmware-mcp": {
+      "command": "/abs/path/to/mcp_server/venv/bin/python",
+      "args": ["/abs/path/to/mcp_server/bridge_mcp_firmware.py"]
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+Edit the config file (create it if missing):
+
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "firmware-mcp": {
+      "command": "/abs/path/to/mcp_server/venv/bin/python",
+      "args": ["/abs/path/to/mcp_server/bridge_mcp_firmware.py"]
+    }
+  }
+}
+```
+
+Fully quit and reopen Claude Desktop, then confirm `firmware-mcp` appears in the
+tools menu.
+
+### Connecting to a remote or non-default Ghidra
+
+If the Ghidra plugin runs on another host or port, append it to `args`:
+
+```json
+"args": [
+  "/abs/path/to/mcp_server/bridge_mcp_firmware.py",
+  "--ghidra-server", "http://192.168.1.50:8080"
+]
+```
+
+> **Security note:** the Ghidra plugin binds `127.0.0.1:8080` with **no
+> authentication** and exposes mutating tools (`rename_function`,
+> `define_data`, ...). Only expose it beyond localhost on a trusted network.
+
+Whichever client you use, Ghidra must be running with a binary open in the
+CodeBrowser and the plugin active (`[INFO] MCP HTTP Server started on port 8080`)
+before the tools will return data.
+
+---
+
 ## Ghidra Version Compatibility
 
 | Ghidra | Status |
