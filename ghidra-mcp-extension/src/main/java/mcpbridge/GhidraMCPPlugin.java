@@ -106,6 +106,7 @@ public class GhidraMCPPlugin extends ProgramPlugin {
             server.createContext("/add_comment", this::handleAddComment);
             server.createContext("/define_data", this::handleDefineData);
             server.createContext("/rename_data", this::handleRenameData);
+            server.createContext("/create_function", this::handleCreateFunction);
 
             // Extended Firmware Analysis
             server.createContext("/get_interrupt_vector_table", this::handleGetInterruptVectorTable);
@@ -859,6 +860,72 @@ public class GhidraMCPPlugin extends ProgramPlugin {
     }
 
     // ── POST /rename_function ──────────────────────────────────────────
+
+    private void handleCreateFunction(HttpExchange exchange) throws IOException {
+        Map<String, String> params = parseQuery(exchange.getRequestURI());
+        String addrStr = params.get("address");
+        String name = params.get("name"); // optional
+        if (addrStr == null) {
+            sendResponse(exchange, 400, errorJson("Missing 'address' parameter").toString());
+            return;
+        }
+        if (name != null && !name.matches("[a-zA-Z_][a-zA-Z0-9_]*")) {
+            sendResponse(exchange, 400, errorJson("Invalid function name: must be a valid C identifier").toString());
+            return;
+        }
+        try {
+            String json = runOnSwing(() -> {
+                Program p = getActiveProgram();
+                if (p == null) return errorJson("No program loaded").toString();
+                Address addr = parseAddress(p, addrStr);
+                if (addr == null) return errorJson("Invalid address: " + addrStr).toString();
+
+                FunctionManager fm = p.getFunctionManager();
+                Function existing = fm.getFunctionAt(addr);
+
+                int txId = p.startTransaction("Create function at " + addrStr);
+                try {
+                    Function func = existing;
+                    boolean created = false;
+                    if (func == null) {
+                        // Ensure there is code at the entry, then create the function.
+                        if (p.getListing().getInstructionAt(addr) == null) {
+                            new ghidra.app.cmd.disassemble.DisassembleCommand(addr, null, true)
+                                .applyTo(p, new ConsoleTaskMonitor());
+                        }
+                        boolean ok = new ghidra.app.cmd.function.CreateFunctionCmd(addr)
+                            .applyTo(p, new ConsoleTaskMonitor());
+                        func = fm.getFunctionAt(addr);
+                        if (!ok || func == null) {
+                            p.endTransaction(txId, false);
+                            return errorJson("Failed to create function at " + addrStr +
+                                " (no disassemblable code at that address?)").toString();
+                        }
+                        created = true;
+                    }
+                    if (name != null) {
+                        func.setName(name, SourceType.USER_DEFINED);
+                    }
+                    JsonObject obj = new JsonObject();
+                    obj.addProperty("success", true);
+                    obj.addProperty("created", created);
+                    obj.addProperty("address", func.getEntryPoint().toString());
+                    obj.addProperty("name", func.getName());
+                    obj.addProperty("message", created
+                        ? ("Function created at " + func.getEntryPoint() + " as " + func.getName())
+                        : ("Function already existed at " + func.getEntryPoint() + " (" + func.getName() + ")"));
+                    p.endTransaction(txId, true);
+                    return obj.toString();
+                } catch (Exception e) {
+                    p.endTransaction(txId, false);
+                    throw e;
+                }
+            });
+            sendResponse(exchange, 200, json);
+        } catch (Exception e) {
+            sendResponse(exchange, 500, errorJson(e.getMessage()).toString());
+        }
+    }
 
     private void handleRenameFunction(HttpExchange exchange) throws IOException {
         Map<String, String> params = parseQuery(exchange.getRequestURI());
