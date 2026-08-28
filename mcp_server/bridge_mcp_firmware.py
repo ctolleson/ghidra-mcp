@@ -2,20 +2,46 @@
 """FirmwareMCP Bridge - Connects Claude to Ghidra for firmware reverse engineering."""
 
 import argparse
+import os
 import httpx
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("FirmwareMCP")
 ghidra_server = "http://127.0.0.1:8080"
 
+# Per-request HTTP timeout (seconds). Kept short so a stuck whole-binary scan on
+# Ghidra's single Swing thread fails fast instead of freezing Claude for minutes.
+# Override with FIRMWARE_MCP_TIMEOUT for the rare heavy call.
+REQUEST_TIMEOUT = float(os.environ.get("FIRMWARE_MCP_TIMEOUT", "30"))
+
+# Hard cap on the characters returned from any single tool call. Whole-binary
+# scans and list endpoints can return tens of thousands of tokens; unbounded,
+# that output is pinned into the conversation and re-sent on every subsequent
+# turn, ballooning context cost. Truncate and tell the model to narrow/paginate.
+# Override with FIRMWARE_MCP_MAX_CHARS. ~16 KB ≈ 4-5k tokens.
+MAX_RESPONSE_CHARS = int(os.environ.get("FIRMWARE_MCP_MAX_CHARS", "16000"))
+
+
+def _truncate(text: str) -> str:
+    """Cap tool output so a single call can't flood the model's context."""
+    if text is None or len(text) <= MAX_RESPONSE_CHARS:
+        return text
+    omitted = len(text) - MAX_RESPONSE_CHARS
+    return (
+        text[:MAX_RESPONSE_CHARS]
+        + f"\n\n[... output truncated: {omitted} more characters omitted. "
+        "Narrow the query (use filter_text / a smaller limit / offset pagination, "
+        "or target a specific address) to see the rest.]"
+    )
+
 
 async def safe_get(path: str, params: dict = None) -> str:
     """GET request to the Ghidra plugin HTTP server."""
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
             resp = await client.get(f"{ghidra_server}{path}", params=params)
             resp.raise_for_status()
-            return resp.text
+            return _truncate(resp.text)
     except Exception as e:
         return f"Error: {e}"
 
@@ -23,10 +49,10 @@ async def safe_get(path: str, params: dict = None) -> str:
 async def safe_post(path: str, params: dict = None) -> str:
     """POST request to the Ghidra plugin HTTP server."""
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
             resp = await client.post(f"{ghidra_server}{path}", params=params)
             resp.raise_for_status()
-            return resp.text
+            return _truncate(resp.text)
     except Exception as e:
         return f"Error: {e}"
 
