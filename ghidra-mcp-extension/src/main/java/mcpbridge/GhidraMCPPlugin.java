@@ -107,6 +107,7 @@ public class GhidraMCPPlugin extends ProgramPlugin {
             server.createContext("/define_data", this::handleDefineData);
             server.createContext("/rename_data", this::handleRenameData);
             server.createContext("/create_function", this::handleCreateFunction);
+            server.createContext("/rename_variable", this::handleRenameVariable);
 
             // Extended Firmware Analysis
             server.createContext("/get_interrupt_vector_table", this::handleGetInterruptVectorTable);
@@ -860,6 +861,81 @@ public class GhidraMCPPlugin extends ProgramPlugin {
     }
 
     // ── POST /rename_function ──────────────────────────────────────────
+
+    private void handleRenameVariable(HttpExchange exchange) throws IOException {
+        Map<String, String> params = parseQuery(exchange.getRequestURI());
+        String addrStr = params.get("function_address");
+        String oldName = params.get("old_name");
+        String newName = params.get("new_name");
+        if (addrStr == null || oldName == null || newName == null) {
+            sendResponse(exchange, 400,
+                errorJson("Missing 'function_address', 'old_name', or 'new_name' parameter").toString());
+            return;
+        }
+        if (!newName.matches("[a-zA-Z_][a-zA-Z0-9_]*")) {
+            sendResponse(exchange, 400, errorJson("Invalid variable name: must be a valid C identifier").toString());
+            return;
+        }
+        try {
+            String json = runOnSwing(() -> {
+                Program p = getActiveProgram();
+                if (p == null) return errorJson("No program loaded").toString();
+                Address addr = parseAddress(p, addrStr);
+                if (addr == null) return errorJson("Invalid address: " + addrStr).toString();
+                Function func = p.getFunctionManager().getFunctionAt(addr);
+                if (func == null) func = p.getFunctionManager().getFunctionContaining(addr);
+                if (func == null) return errorJson("No function at address " + addrStr).toString();
+
+                DecompInterface decomp = new DecompInterface();
+                try {
+                    decomp.openProgram(p);
+                    DecompileResults dr = decomp.decompileFunction(func, 60, new ConsoleTaskMonitor());
+                    if (dr == null || !dr.decompileCompleted()) {
+                        return errorJson("Decompilation failed: " +
+                            (dr == null ? "no results" : dr.getErrorMessage())).toString();
+                    }
+                    ghidra.program.model.pcode.HighFunction hf = dr.getHighFunction();
+                    if (hf == null) return errorJson("No high function for " + func.getName()).toString();
+
+                    ghidra.program.model.pcode.HighSymbol target = null;
+                    java.util.List<String> available = new java.util.ArrayList<>();
+                    java.util.Iterator<ghidra.program.model.pcode.HighSymbol> it =
+                        hf.getLocalSymbolMap().getSymbols();
+                    while (it.hasNext()) {
+                        ghidra.program.model.pcode.HighSymbol hs = it.next();
+                        available.add(hs.getName());
+                        if (hs.getName().equals(oldName)) target = hs;
+                    }
+                    if (target == null) {
+                        return errorJson("No variable named '" + oldName + "' in " + func.getName() +
+                            ". Available: " + String.join(", ", available)).toString();
+                    }
+
+                    int txId = p.startTransaction("Rename variable " + oldName + " to " + newName);
+                    try {
+                        ghidra.program.model.pcode.HighFunctionDBUtil.updateDBVariable(
+                            target, newName, null, SourceType.USER_DEFINED);
+                        p.endTransaction(txId, true);
+                    } catch (Exception e) {
+                        p.endTransaction(txId, false);
+                        throw e;
+                    }
+
+                    JsonObject obj = new JsonObject();
+                    obj.addProperty("success", true);
+                    obj.addProperty("function", func.getName());
+                    obj.addProperty("message", "Renamed variable '" + oldName + "' to '" + newName +
+                        "' in " + func.getName());
+                    return obj.toString();
+                } finally {
+                    decomp.dispose();
+                }
+            });
+            sendResponse(exchange, 200, json);
+        } catch (Exception e) {
+            sendResponse(exchange, 500, errorJson(e.getMessage()).toString());
+        }
+    }
 
     private void handleCreateFunction(HttpExchange exchange) throws IOException {
         Map<String, String> params = parseQuery(exchange.getRequestURI());
