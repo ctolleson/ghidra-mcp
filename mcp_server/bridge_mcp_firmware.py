@@ -248,6 +248,20 @@ async def rename_data(address: str, new_name: str) -> str:
 
 
 @mcp.tool()
+async def rename_variable(function_address: str, old_name: str, new_name: str) -> str:
+    """Renames a local variable or parameter shown in the decompiler for the function
+    at function_address. Pass the exact current decompiler name as old_name (e.g. 'iVar1',
+    'local_18', 'uStack_14', 'param_1'); new_name must be a valid C identifier. If the
+    name isn't found, the error lists the function's available variable names so you can
+    retry. Decompile the function first to see the current names."""
+    return await safe_post("/rename_variable", {
+        "function_address": function_address,
+        "old_name": old_name,
+        "new_name": new_name,
+    })
+
+
+@mcp.tool()
 async def create_function(address: str, name: str = "") -> str:
     """Creates a function at the given address, disassembling the entry point first
     if needed. Use this to promote code that Ghidra didn't auto-detect as a function
