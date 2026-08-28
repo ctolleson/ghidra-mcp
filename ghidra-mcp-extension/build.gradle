@@ -24,6 +24,20 @@ if (!file("${ghidraInstallDir}/Ghidra/application.properties").exists()) {
     throw new GradleException("Not a Ghidra installation: ${ghidraInstallDir}")
 }
 
+// Ghidra's ExtensionInstaller compares extension.properties `version=` as an
+// exact string against the Ghidra version at install time. Rather than hardcode
+// it (which breaks whenever you build for a different Ghidra), read the version
+// straight from the target install and stamp it into the packaged extension.
+def ghidraVersion = {
+    def props = new Properties()
+    file("${ghidraInstallDir}/Ghidra/application.properties").withInputStream { props.load(it) }
+    def v = props.getProperty('application.version')
+    if (!v?.trim()) {
+        throw new GradleException("application.version not found in ${ghidraInstallDir}/Ghidra/application.properties")
+    }
+    return v.trim()
+}()
+
 repositories {
     mavenCentral()
 }
@@ -43,12 +57,36 @@ jar {
     archiveBaseName = 'ghidra-mcp'
 }
 
+// Generate extension.properties with the version stamped from the target Ghidra
+// install. The committed extension.properties `version=` value is a placeholder;
+// this is the value that actually ships in the zip.
+def generatedExtProps = layout.buildDirectory.file("generated/extension.properties")
+
+task genExtensionProps {
+    def srcFile = file('extension.properties')
+    def outFile = generatedExtProps.get().asFile
+    inputs.file(srcFile)
+    inputs.property('ghidraVersion', ghidraVersion)
+    outputs.file(outFile)
+    doLast {
+        outFile.parentFile.mkdirs()
+        def lines = srcFile.readLines().collect { line ->
+            line.startsWith('version=') ? "version=${ghidraVersion}" : line
+        }
+        outFile.text = lines.join('\n') + '\n'
+        logger.lifecycle("Stamped ghidra-mcp extension version=${ghidraVersion} (from ${ghidraInstallDir})")
+    }
+}
+
 task zipExtension(type: Zip) {
+    dependsOn genExtensionProps
     archiveFileName = "ghidra-mcp.zip"
     destinationDirectory = file("dist")
 
+    from (generatedExtProps) {
+        into 'ghidra-mcp'
+    }
     from (projectDir) {
-        include 'extension.properties'
         include 'Module.manifest'
         into 'ghidra-mcp'
     }
