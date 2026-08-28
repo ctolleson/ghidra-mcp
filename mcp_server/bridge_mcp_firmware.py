@@ -247,6 +247,20 @@ async def rename_data(address: str, new_name: str) -> str:
     })
 
 
+@mcp.tool()
+async def create_function(address: str, name: str = "") -> str:
+    """Creates a function at the given address, disassembling the entry point first
+    if needed. Use this to promote code that Ghidra didn't auto-detect as a function
+    (e.g. interrupt handlers reached only through the vector table, which often lack
+    a standard push-prologue). Optionally pass a valid C identifier to name it;
+    otherwise it adopts any existing label at that address. Returns the function's
+    entry and name. Safe to call if a function already exists there (reports it)."""
+    params = {"address": address}
+    if name:
+        params["name"] = name
+    return await safe_post("/create_function", params)
+
+
 # ── Extended Firmware Analysis ─────────────────────────────────────────
 
 
