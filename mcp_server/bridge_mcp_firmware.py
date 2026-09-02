@@ -214,13 +214,18 @@ async def rename_function(address: str, new_name: str) -> str:
 
 
 @mcp.tool()
-async def add_comment(address: str, comment: str) -> str:
-    """Adds a plate comment at the specified address in Ghidra.
-    Use to annotate findings: vulnerability notes, protocol details,
-    hardware register descriptions, or analysis summaries."""
+async def add_comment(address: str, comment: str, comment_type: str = "eol") -> str:
+    """Adds a comment at the given address in Ghidra. comment_type selects placement:
+    'eol' (end-of-line, inline on the instruction - the default, best for annotating a
+    single instruction), 'pre' (line above), 'post' (line below), 'plate' (boxed block
+    header, for a function/section summary), or 'repeatable' (shown here and at every
+    xref to this address). Comment RE findings SPARINGLY and high-signal: hardware/
+    register meaning, magic values, protocol or state-machine details, and vulnerability
+    notes - never restatements of what the instruction already plainly says."""
     return await safe_post("/add_comment", {
         "address": address,
         "comment": comment,
+        "comment_type": comment_type,
     })
 
 
