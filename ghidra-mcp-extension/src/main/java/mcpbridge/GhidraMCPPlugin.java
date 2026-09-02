@@ -1052,9 +1052,22 @@ public class GhidraMCPPlugin extends ProgramPlugin {
         Map<String, String> params = parseQuery(exchange.getRequestURI());
         String addrStr = params.get("address");
         String comment = params.get("comment");
+        String typeStr = params.getOrDefault("comment_type", "eol").toLowerCase();
         if (addrStr == null || comment == null) {
             sendResponse(exchange, 400, errorJson("Missing 'address' or 'comment' parameter").toString());
             return;
+        }
+        CommentType ctype;
+        switch (typeStr) {
+            case "eol":        ctype = CommentType.EOL; break;
+            case "pre":        ctype = CommentType.PRE; break;
+            case "post":       ctype = CommentType.POST; break;
+            case "plate":      ctype = CommentType.PLATE; break;
+            case "repeatable": ctype = CommentType.REPEATABLE; break;
+            default:
+                sendResponse(exchange, 400, errorJson("Invalid comment_type '" + typeStr +
+                    "' (use eol, pre, post, plate, or repeatable)").toString());
+                return;
         }
         try {
             String json = runOnSwing(() -> {
@@ -1063,9 +1076,9 @@ public class GhidraMCPPlugin extends ProgramPlugin {
                 Address addr = parseAddress(p, addrStr);
                 if (addr == null) return errorJson("Invalid address: " + addrStr).toString();
 
-                int txId = p.startTransaction("Add comment");
+                int txId = p.startTransaction("Add " + typeStr + " comment");
                 try {
-                    p.getListing().setComment(addr, CommentType.PLATE, comment);
+                    p.getListing().setComment(addr, ctype, comment);
                     p.endTransaction(txId, true);
                 } catch (Exception e) {
                     p.endTransaction(txId, false);
@@ -1074,7 +1087,7 @@ public class GhidraMCPPlugin extends ProgramPlugin {
 
                 JsonObject obj = new JsonObject();
                 obj.addProperty("success", true);
-                obj.addProperty("message", "Comment added at " + addr.toString());
+                obj.addProperty("message", typeStr + " comment added at " + addr.toString());
                 return obj.toString();
             });
             sendResponse(exchange, 200, json);
