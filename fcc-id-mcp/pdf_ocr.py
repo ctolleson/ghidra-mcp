@@ -45,7 +45,7 @@ def derive_pdf_url(doc_page_url: str) -> str:
     return doc_page_url.rstrip("/") + ".pdf"
 
 
-def _cache_paths(fcc_id: str, doc_page_url: str, downloads_dir: Path) -> tuple[Path, Path]:
+def cache_paths(fcc_id: str, doc_page_url: str, downloads_dir: Path) -> tuple[Path, Path]:
     """Returns (pdf_path, ocr_text_path) for a given (fcc_id, doc_url) pair."""
     digest = hashlib.sha1(doc_page_url.encode("utf-8")).hexdigest()[:12]
     slug = re.sub(r"[^A-Za-z0-9._-]+", "_", doc_page_url.rsplit("/", 1)[-1])[:64] or "doc"
@@ -54,6 +54,26 @@ def _cache_paths(fcc_id: str, doc_page_url: str, downloads_dir: Path) -> tuple[P
     pdf_path = base / f"{digest}_{slug}.pdf"
     ocr_path = base / f"{digest}_{slug}.ocr.txt"
     return pdf_path, ocr_path
+
+
+def _looks_like_pdf(head: bytes) -> bool:
+    """True if ``head`` (first ~1KB of a response) is a PDF. The magic bytes
+    are allowed a small offset because some servers prepend whitespace."""
+    return b"%PDF-" in head[:64]
+
+
+def pdf_page_count(pdf_path: Path) -> int | None:
+    """Page count, or None if pymupdf is unavailable or the file is unreadable."""
+    if fitz is None:
+        return None
+    try:
+        doc = fitz.open(str(pdf_path))
+    except Exception:
+        return None
+    try:
+        return doc.page_count
+    finally:
+        doc.close()
 
 
 async def fetch_pdf(
@@ -68,7 +88,7 @@ async def fetch_pdf(
     Returns a small diagnostics dict: {'path', 'size_bytes', 'from_cache', 'url'}.
     """
     pdf_url = derive_pdf_url(doc_page_url)
-    if pdf_path.exists() and pdf_path.stat().st_size > 0:
+    if pdf_path.exists() and pdf_path.stat().st_size > 0 and _looks_like_pdf(pdf_path.read_bytes()[:1024]):
         return {
             "path": str(pdf_path),
             "size_bytes": pdf_path.stat().st_size,
@@ -81,6 +101,10 @@ async def fetch_pdf(
     content = resp.content
     if len(content) > max_bytes:
         raise ValueError(f"PDF too large ({len(content)} bytes > {max_bytes})")
+    # Both hosts answer a bad document path with a 200 + HTML error page, so a
+    # successful status code is not enough to conclude we got a PDF.
+    if not _looks_like_pdf(content[:1024]):
+        raise ValueError(f"response from {pdf_url} is not a PDF ({len(content)} bytes)")
 
     tmp = pdf_path.with_suffix(pdf_path.suffix + ".part")
     tmp.write_bytes(content)
@@ -202,7 +226,7 @@ async def extract_pdf_text(
         result["error"] = "pymupdf (fitz) not installed"
         return result
 
-    pdf_path, ocr_cache = _cache_paths(fcc_id, doc_page_url, downloads_dir)
+    pdf_path, ocr_cache = cache_paths(fcc_id, doc_page_url, downloads_dir)
     try:
         fetch_info = await fetch_pdf(client, doc_page_url, pdf_path)
     except httpx.HTTPError as exc:
