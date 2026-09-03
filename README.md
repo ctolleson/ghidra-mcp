@@ -72,12 +72,15 @@ An MCP (Model Context Protocol) server that connects AI assistants to Ghidra for
 
 ## Prerequisites
 
-1. **Ghidra 12.0.1** (strict requirement)
-   - Download from the [official release page](https://github.com/NationalSecurityAgency/ghidra/releases/tag/Ghidra_12.0.1_build).
-   - The extension is version-stamped `12.0.1`. Installing it into a different
-     Ghidra release triggers an "Extension Version Mismatch" dialog (Ghidra
-     compares `extension.properties` against its own version string). You can
-     click through it, but the supported target is 12.0.1.
+1. **Ghidra 12.0.1 or newer**
+   - Download from the [official release page](https://github.com/NationalSecurityAgency/ghidra/releases).
+   - The build **auto-stamps** the extension to match whatever Ghidra you point it at
+     (it reads `application.version` from the install), so there is no manual version
+     editing and no "Extension Version Mismatch" dialog when you build against your own
+     Ghidra. Verified on 12.0.1 and 12.0.3.
+   - **A pre-compiled extension for Ghidra 12.0.1 is included** in
+     `ghidra-mcp-extension/dist/ghidra-mcp-12.0.1.zip`. If you are on 12.0.1 you can **skip
+     Step 1 (Build)** and go straight to Step 2 (Install).
 
 2. **JDK 21 or newer** — required to build the extension.
    - Ghidra 12.x sets `application.java.min=21`; JDK 17 is no longer sufficient.
@@ -94,6 +97,17 @@ An MCP (Model Context Protocol) server that connects AI assistants to Ghidra for
 
 ## Step 1: Build the Ghidra Extension
 
+> **Prebuilt extension (committed):** `ghidra-mcp-extension/dist/ghidra-mcp-12.0.1.zip` — for
+> Ghidra **12.0.1**, already compiled and verified. If you are on 12.0.1, **skip to Step 2: Install**.
+>
+> For **Ghidra 11.3.1** (or any other version), build from source below. Note that `dist/` is
+> git-ignored, so build outputs are not committed — only the 12.0.1 prebuilt is tracked in the repo.
+
+**Naming convention:** both the committed prebuilt and the build output use a version-specific name,
+`ghidra-mcp-<ghidra_version>.zip`. The build derives that name from `ghidra_version` in
+`extension.properties`, so the filename always reflects the version the ZIP is actually tagged for.
+ZIP-level compatibility is governed by `extension.properties` inside the archive, not the filename.
+
 1. Clone this repository.
 2. Tell the build where Ghidra lives. Either export `GHIDRA_INSTALL_DIR`:
    ```bash
@@ -108,14 +122,21 @@ An MCP (Model Context Protocol) server that connects AI assistants to Ghidra for
    `-PghidraInstallDir=/path/to/ghidra_12.0.1_PUBLIC`.
 
    The build fails fast with a clear message if the path is unset or does not
-   look like a Ghidra installation.
+   look like a Ghidra installation. You do **not** edit any version by hand — the
+   build reads `application.version` from that install and stamps it into the
+   extension automatically.
 
 3. Build the project:
    ```bash
    cd ghidra-mcp-extension
+   # build for the default (11.3.1) -> dist/ghidra-mcp-11.3.1.zip
    gradle build
+   # or build for another version, e.g. 12.0.1 (after editing extension.properties as in step 3):
+   gradle build -PghidraInstallDir=/Applications/ghidra_12.0.1_PUBLIC   # -> dist/ghidra-mcp-12.0.1.zip
    ```
-4. If successful, a ZIP file will be created at `dist/ghidra-mcp.zip`.
+4. The build writes **`dist/ghidra-mcp-<version>.zip`**, where `<version>` is auto-derived
+   from the Ghidra install you built against (e.g. `dist/ghidra-mcp-12.0.3.zip`) — matching the
+   version-specific naming of the committed prebuilt.
 
 ---
 
@@ -124,7 +145,7 @@ An MCP (Model Context Protocol) server that connects AI assistants to Ghidra for
 1. Open Ghidra.
 2. From the Project Manager window, go to **File** -> **Install Extensions**.
 3. Click the green **Plus (+)** icon.
-4. Navigate to `dist/` and select `ghidra-mcp.zip`.
+4. Navigate to `dist/` and select the version-matched ZIP, `ghidra-mcp-<version>.zip` — e.g. the committed `ghidra-mcp-12.0.1.zip` for Ghidra 12.0.1, or your own `ghidra-mcp-11.3.1.zip` from a build. (Ghidra reads `extension.properties` inside the ZIP to verify compatibility.)
 5. Click **OK**. Ensure the checkbox next to `ghidra-mcp` is checked.
 6. **Restart Ghidra.**
 

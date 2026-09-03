@@ -1,6 +1,6 @@
 // build.gradle — Ghidra MCP extension
 //
-// Requires Ghidra 12.0.1 and JDK 21+.
+// Requires Ghidra 12.0.1+ and JDK 21+.
 //
 // Point the build at your Ghidra installation either by exporting
 // GHIDRA_INSTALL_DIR, or by passing -PghidraInstallDir=/path/to/ghidra:
@@ -78,9 +78,13 @@ task genExtensionProps {
     }
 }
 
+// Name the artifact for the target Ghidra version (dist/ghidra-mcp-<version>.zip),
+// using the same auto-derived version stamped into the extension so the prebuilt
+// and freshly-built names stay in sync. Compatibility is governed by
+// extension.properties inside the ZIP, not the filename.
 task zipExtension(type: Zip) {
     dependsOn genExtensionProps
-    archiveFileName = "ghidra-mcp.zip"
+    archiveFileName = "ghidra-mcp-${ghidraVersion}.zip"
     destinationDirectory = file("dist")
 
     from (generatedExtProps) {
